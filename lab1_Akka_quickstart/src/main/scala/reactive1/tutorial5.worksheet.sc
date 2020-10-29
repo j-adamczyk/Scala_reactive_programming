@@ -14,19 +14,19 @@ implicit class Adding[A](x: A)(implicit s: Add[A]) {
     s.add(x, y)
 }
 
-class Rational(val numer: Int, val denom: Int = 1) {
-  override def toString = numer + "/" + denom
+class Rational(val number: Int, val denom: Int = 1) {
+  override def toString = number + "/" + denom
 }
 
 object Rational {
   // scala compiler will look into companion object when trying to find missing implicit
   implicit val addRational: Add[Rational] = (x: Rational, y: Rational) => {
-    new Rational(x.numer * y.denom + y.numer * x.denom, x.denom * y.denom)
+    new Rational(x.number * y.denom + y.number * x.denom, x.denom * y.denom)
   }
 }
 
 val rational1 = new Rational(1, 2)
-val rational2 = new Rational(1, 2)
+val rational2 = new Rational(1, 3)
 rational1 + rational2
 
 // some other example
@@ -56,6 +56,17 @@ sum(rational1, rational2)
 sum2(basket1, basket2)
 
 // You can find those type classes in the standard scala library:
-// TODO: Uncomment and make it compile
-//List(rational1, rational2).sorted
-//List(basket1, basket2).sorted
+
+implicit object RationalOrdering extends Ordering[Rational] {
+  def compare(x: Rational, y: Rational) = {
+    // transform to floats, compare floats
+    x.number.toFloat / x.denom compare y.number.toFloat / y.denom
+  }
+}
+List(rational1, rational2).sorted
+
+implicit object BasketOrdering extends Ordering[Basket] {
+  def compare(x: Basket, y: Basket) = x.items.size compare y.items.size
+}
+
+List(basket1, basket2).sorted

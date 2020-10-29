@@ -20,7 +20,7 @@ def sqr_by_value(x: Double, y: Boolean) = x * x          //> sqr: (x: Double, y:
 def sqr_by_name(x: Double, y: => Boolean) = x * x      //> sqr2: (x: Double, y: => Boolean)Double
 
 //sqr_by_value(2, loop)    // uncomment and try!
-sqr_by_name(2, loop)                                   
+//sqr_by_name(2, loop)
 
 // b. if expression
 //////////////////////
@@ -56,8 +56,19 @@ fact(6)
 
 // Exercise 1: write a function that computes SUM(f(x)) where
 //             x are all integers between a and b: a <= x <= b
-def sum(a: Int, b: Int, f: Int => Int): Int = ???
+def sum(a: Int, b: Int, f: Int => Int): Int = {
+  var result = 0
+  if (a > b)
+    0
+  else {
+    for (x <- a to b)
+      result += f(x)
+    result
+  }
+}
                                                 //> sum: (a: Int, b: Int, f: Int => Int)Int
+
+sum(1, 3, (x: Int) => x)
 
 // For example, we can compute the sum of all integers from a given range:
 def sumInts(a: Int, b: Int) = sum(a, b, (x: Int) => x)
