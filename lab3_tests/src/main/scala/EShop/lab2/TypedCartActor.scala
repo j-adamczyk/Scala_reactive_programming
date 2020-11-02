@@ -85,7 +85,6 @@ class TypedCartActor {
 
       case ConfirmCheckoutClosed =>
         empty
-
     }
   )
 }
