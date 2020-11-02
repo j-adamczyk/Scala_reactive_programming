@@ -12,7 +12,7 @@ object TypedPayment {
 
 class TypedPayment(
   method: String,
-  orderManager: ActorRef[TypedOrderManager.Command],
+  orderManager: ActorRef[OrderManager.Command],
   checkout: ActorRef[TypedCheckout.Command]
 ) {
 
@@ -21,9 +21,10 @@ class TypedPayment(
   def start: Behavior[TypedPayment.Command] = Behaviors.receive(
     (context, msg) => msg match {
       case DoPayment =>
-        orderManager ! TypedOrderManager.ConfirmPaymentReceived
+        orderManager ! OrderManager.ConfirmPaymentReceived
         checkout ! TypedCheckout.ConfirmPaymentReceived
         Behaviors.stopped
     }
   )
+
 }

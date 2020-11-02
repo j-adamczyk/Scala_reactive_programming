@@ -1,6 +1,5 @@
 package EShop.lab3
 
-import EShop.lab3.OrderManager._
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
 import akka.util.Timeout
@@ -19,6 +18,8 @@ class OrderManagerIntegrationTest
   with BeforeAndAfterAll
   with Matchers
   with ScalaFutures {
+
+  import OrderManager._
 
   implicit val timeout: Timeout = 1.second
 

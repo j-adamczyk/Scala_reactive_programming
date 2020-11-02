@@ -1,16 +1,12 @@
 package EShop.lab3
 
-import EShop.lab2.{CartActor, Checkout}
+import EShop.lab2
+import EShop.lab2.{TypedCartActor, TypedCheckout}
 import EShop.lab3.OrderManager._
-import EShop.lab3.Payment.DoPayment
 import akka.actor.{Actor, ActorRef}
 import akka.event.LoggingReceive
+import akka.actor.typed.scaladsl.adapter._
 import akka.actor._
-import akka.pattern.ask
-import akka.util.Timeout
-
-import scala.concurrent.Await
-import scala.concurrent.duration._
 
 
 object OrderManager {
@@ -20,8 +16,8 @@ object OrderManager {
   case class SelectDeliveryAndPaymentMethod(delivery: String, payment: String) extends Command
   case object Buy                                                              extends Command
   case object Pay                                                              extends Command
-  case class ConfirmCheckoutStarted(checkoutRef: ActorRef)                     extends Command
-  case class ConfirmPaymentStarted(paymentRef: ActorRef)                       extends Command
+  case class ConfirmCheckoutStarted(checkoutRef: akka.actor.typed.ActorRef[TypedCheckout.Command])  extends Command
+  case class ConfirmPaymentStarted(paymentRef: akka.actor.typed.ActorRef[TypedPayment.Command])     extends Command
   case object ConfirmPaymentReceived                                           extends Command
 
   sealed trait Ack
@@ -29,62 +25,71 @@ object OrderManager {
 }
 
 class OrderManager extends Actor {
-  implicit val timeout: Timeout = Timeout(5 seconds)
   override def receive: Receive = uninitialized
 
-  def uninitialized: Receive = {
+  def uninitialized: Receive = LoggingReceive {
     case AddItem(item) =>
-      val cartActor = context.actorOf(
-        CartActor.props(),
-        "cart"
-      )
-      cartActor ! CartActor.AddItem(item)
-      context become open(cartActor)
+      val typedCartActor: akka.actor.typed.ActorRef[lab2.TypedCartActor.Command] =
+        context.spawn(new TypedCartActor().start, "typedCartActor")
+      typedCartActor ! TypedCartActor.AddItem(item)
+      context become open(typedCartActor)
       sender() ! Done
   }
 
-  def open(cartActor: ActorRef): Receive = {
+  def open(cartActor: akka.actor.typed.ActorRef[TypedCartActor.Command]): Receive = LoggingReceive {
     case AddItem(item) =>
-      cartActor ! CartActor.AddItem(item)
+      cartActor ! TypedCartActor.AddItem(item)
       sender() ! Done
+
     case RemoveItem(item) =>
-      cartActor ! CartActor.RemoveItem(item)
+      cartActor ! TypedCartActor.RemoveItem(item)
       sender() ! Done
+
     case Buy =>
-      val future = cartActor ? CartActor.StartCheckout
-      val result = Await.result(future, timeout.duration).asInstanceOf[ConfirmCheckoutStarted]
-      val checkoutActorRef = result.checkoutRef
-      checkoutActorRef ! Checkout.StartCheckout
-      context become inCheckout(checkoutActorRef)
-      sender() ! Done
+      cartActor ! TypedCartActor.StartCheckout(context.self)
+      context become inCheckout(cartActor, sender)
   }
 
-  //def inCheckout(cartActorRef: ActorRef, senderRef: ActorRef): Receive = ???
 
-  def inCheckout(checkoutActorRef: ActorRef): Receive = {
-    case SelectDeliveryAndPaymentMethod(delivery, payment) =>
-      checkoutActorRef ! Checkout.SelectDeliveryMethod(delivery)
+  def inCheckout(cartActorRef: akka.actor.typed.ActorRef[TypedCartActor.Command],
+                 senderRef: ActorRef): Receive = LoggingReceive {
+    case TypedCartActor.CheckoutStarted(checkoutRef) =>
+      context become inCheckout(checkoutRef)
+      senderRef ! Done
 
-      val future = checkoutActorRef ? Checkout.SelectPayment(payment)
-      val result = Await.result(future, timeout.duration).asInstanceOf[ConfirmPaymentStarted]
-      val paymentActorRef = result.paymentRef
-      context become inPayment(paymentActorRef)
-      sender() ! Done
+    case _ =>
+      println("empty " + sender())
+      self forward _
   }
 
-  def inPayment(paymentActorRef: ActorRef): Receive = {
-    case Pay =>
-      val future = paymentActorRef ? DoPayment
-      Await.result(future, timeout.duration)
+  def inCheckout(checkoutActorRef: akka.actor.typed.ActorRef[TypedCheckout.Command]): Receive = LoggingReceive {
+    case OrderManager.SelectDeliveryAndPaymentMethod(delivery, payment) =>
+      checkoutActorRef ! TypedCheckout.SelectDeliveryMethod(delivery)
+      checkoutActorRef ! TypedCheckout.SelectPayment(payment, context.self)
+      context become inPayment(sender)
+
+    case TypedCartActor.ConfirmCheckoutClosed =>
       context become finished
-      sender() ! Done
   }
 
-  //def inPayment(paymentActorRef: ActorRef, senderRef: ActorRef): Receive = ???
+  def inPayment(senderRef: ActorRef): Receive = LoggingReceive {
+    case OrderManager.ConfirmPaymentStarted(paymentRef) =>
+      context become inPayment(paymentRef, senderRef)
+      senderRef ! Done
+  }
+
+  def inPayment(paymentActorRef: akka.actor.typed.ActorRef[TypedPayment.Command], senderRef: ActorRef): Receive = {
+    case Pay =>
+      paymentActorRef ! TypedPayment.DoPayment
+      context become inPayment(paymentActorRef, sender)
+
+    case OrderManager.ConfirmPaymentReceived =>
+      context become finished
+      senderRef ! Done
+  }
 
   def finished: Receive = {
     case _ =>
       sender() ! "order manager finished job"
-      sender() ! Done
   }
 }
