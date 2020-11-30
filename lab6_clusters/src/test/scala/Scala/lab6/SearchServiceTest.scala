@@ -1,4 +1,4 @@
-package EShop.lab6
+package Scala.lab6
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 

@@ -3,6 +3,7 @@ import java.net.URI
 import java.util.zip.GZIPInputStream
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.event.LoggingReceive
 import akka.routing.{ActorRefRoutee, RoundRobinPool, RoundRobinRoutingLogic, Router}
 import com.typesafe.config.ConfigFactory
 
@@ -47,6 +48,24 @@ class SearchService() {
   }
 }
 
+object Master {
+  def props(): Props =
+    Props(new Master())
+}
+
+class Master() extends Actor {
+  import ProductCatalog._
+
+  val nbOfRoutees = 5
+  val router: ActorRef =
+    context.actorOf(RoundRobinPool(nbOfRoutees).props(ProductCatalog.props(new SearchService)), "router")
+
+  def receive: Receive = LoggingReceive {
+    case GetItems(brand, productKeyWords) =>
+      router.forward(ProductCatalog.GetItems(brand, productKeyWords))
+  }
+}
+
 object ProductCatalog {
   case class Item(id: URI, name: String, brand: String, price: BigDecimal, count: Int)
 
@@ -61,29 +80,17 @@ object ProductCatalog {
 }
 
 class ProductCatalog(searchService: SearchService) extends Actor {
+
   import ProductCatalog._
 
-  override def receive: Receive = {
+  override def receive: Receive = LoggingReceive {
     case GetItems(brand, productKeyWords) =>
       sender() ! Items(searchService.search(brand, productKeyWords))
   }
 }
 
-class Master() extends Actor {
-  import ProductCatalog._
-
-  val nbOfRoutees = 5
-  val router: ActorRef = context.actorOf(
-    RoundRobinPool(nbOfRoutees).props(ProductCatalog.props(new SearchService)),
-    "router")
-
-  def receive: Receive = {
-    case GetItems(brand, productKeyWords) =>
-      router.forward(GetItems(brand, productKeyWords))
-  }
-}
-
 object ProductCatalogApp extends App {
+
   private val config = ConfigFactory.load()
 
   private val productCatalogSystem = ActorSystem(
@@ -92,7 +99,7 @@ object ProductCatalogApp extends App {
   )
 
   productCatalogSystem.actorOf(
-    Props(classOf[Master]),
+    Master.props(),
     "productcatalog"
   )
 

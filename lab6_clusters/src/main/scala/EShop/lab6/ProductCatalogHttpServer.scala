@@ -4,20 +4,21 @@ import java.net.URI
 
 import EShop.lab6.ProductCatalog.{GetItems, Item, Items}
 import EShop.lab6.ProductCatalogHttpServer.Response
-import akka.actor.ActorSystem
-
-import scala.concurrent.duration._
-import akka.pattern.ask
+import akka.actor.{ActorSystem, Props}
+import akka.cluster.routing.{ClusterRouterPool, ClusterRouterPoolSettings}
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.server.{HttpApp, Route}
+import akka.pattern.ask
+import akka.routing.RoundRobinPool
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
 import spray.json.{DefaultJsonProtocol, JsString, JsValue, JsonFormat}
 
 import scala.concurrent.{Await, Future}
-
+import scala.concurrent.duration.DurationInt
+import scala.util.Try
 object ProductCatalogHttpServer {
-  case class Query(brand: String, productKeyWords: List[String])
+  case class Query(brand: String, productKeywords: List[String])
   case class Response(products: List[Item])
 }
 
@@ -30,30 +31,49 @@ trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
       case _             => throw new RuntimeException("Parsing exception")
     }
   }
-
-  implicit val itemFormat = jsonFormat5(Item)
-  implicit val queryFormat = jsonFormat2(ProductCatalogHttpServer.Query)
+  implicit val itemFormat     = jsonFormat5(Item)
+  implicit val queryFormat    = jsonFormat2(ProductCatalogHttpServer.Query)
   implicit val responseFormat = jsonFormat1(ProductCatalogHttpServer.Response)
 }
 
-object ProductCatalogHttpServerApp extends App {
-  new ProductCatalogHttpServer().startServer("localhost", 9000)
+object ClusterNodeApp extends App {
+  private val config = ConfigFactory.load()
+
+  val system = ActorSystem(
+    "ClusterWorkRouters",
+    config
+      .getConfig(Try(args(0)).getOrElse("cluster-default"))
+      .withFallback(config.getConfig("cluster-default"))
+  )
 }
 
-/** Just to demonstrate how one can build akka-http based server with JsonSupport */
+object ProductCatalogHttpServerApp extends App {
+  new ProductCatalogHttpServer().startServer("localhost", args(0).toInt)
+}
+
 class ProductCatalogHttpServer extends HttpApp with JsonSupport {
-  implicit val timeout = Timeout(5 seconds)
   val config = ConfigFactory.load()
 
-  val actorSystem = ActorSystem("server", config.getConfig("server").withFallback(config))
-  val productCatalog =
-    actorSystem.actorSelection("akka.tcp://ProductCatalog@127.0.0.1:2553/user/productcatalog")
+  val system = ActorSystem(
+    "ClusterWorkRouters",
+    config.getConfig("cluster-default")
+  )
+
+  val workers = system.actorOf(
+    ClusterRouterPool(
+      RoundRobinPool(0),
+      ClusterRouterPoolSettings(totalInstances = 100, maxInstancesPerNode = 3, allowLocalRoutees = true)
+    ).props(ProductCatalog.props(new SearchService())),
+    name = "clusterWorkerRouter"
+  )
+
+  implicit val timeout: Timeout = 5.seconds
 
   override protected def routes: Route = {
     path("search") {
       post {
         entity(as[ProductCatalogHttpServer.Query]) { query =>
-          val future = productCatalog ? GetItems(query.brand, query.productKeyWords)
+          val future = workers ? GetItems(query.brand, query.productKeywords)
           val result = Await.result(future, timeout.duration).asInstanceOf[Items]
 
           complete {

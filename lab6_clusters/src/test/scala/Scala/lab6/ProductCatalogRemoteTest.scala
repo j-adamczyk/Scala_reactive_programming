@@ -1,4 +1,4 @@
-package EShop.lab6
+package Scala.lab6
 import akka.actor.ActorSystem
 import akka.pattern.ask
 import akka.util.Timeout
